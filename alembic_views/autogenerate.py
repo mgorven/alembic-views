@@ -97,6 +97,8 @@ def compare_views(
     for schema, name in set(sqla_views) & set(db_views):
         if sqla_views[(schema, name)] != db_views[(schema, name)]:
             log.info("Detected changed view '%s'", name)
+            log.debug("SQLAlchemy definition: |%s|", sqla_views[(schema, name)])
+            log.debug("Database definition: |%s|", db_views[(schema, name)])
             upgrade_ops.ops.append(
                 ReplaceViewOp(
                     name,
