@@ -13,23 +13,46 @@ from alembic_views.operations import CreateViewOp, DropViewOp, ReplaceViewOp
 log = logging.getLogger(__name__)
 
 
-def reflect_sqlite(autogen_context: AutogenContext) -> dict[str, str]:
-    views = autogen_context.connection.execute(  # type: ignore[union-attr]
-        text("SELECT name, sql FROM sqlite_master WHERE type='view'")
-    )
-    return {view[0]: normalise_sqlite(view[1]) for view in views}
+def reflect_sqlite(
+    autogen_context: AutogenContext, schemas: list[str]
+) -> dict[tuple[str | None, str], str]:
+    views: dict[tuple[str | None, str], str] = {}
+    for schema in schemas:
+        prefix = schema + "." if schema else ""
+        rows = autogen_context.connection.execute(  # type: ignore[union-attr]
+            text(f"SELECT name, sql FROM {prefix}sqlite_master WHERE type='view'")
+        )
+        views.update({(schema, row[0]): normalise_sqlite(row[1]) for row in rows})
+    return views
 
 
 def normalise_sqlite(definition: str) -> str:
     return re.sub(r"^CREATE VIEW \S+ AS ", "", definition, flags=re.I).replace("\n", "")
 
 
-def reflect_postgresql(autogen_context: AutogenContext) -> dict[str, str]:
-    views = autogen_context.connection.execute(  # type: ignore[union-attr]
-        text("SELECT viewname, definition FROM pg_views WHERE schemaname = :schema"),
-        {"schema": autogen_context.dialect.default_schema_name},  # type: ignore[union-attr]
+def reflect_postgresql(
+    autogen_context: AutogenContext, schemas: list[str]
+) -> dict[tuple[str | None, str], str]:
+    rows = autogen_context.connection.execute(  # type: ignore[union-attr]
+        text(
+            "SELECT schemaname, viewname, definition FROM pg_views WHERE schemaname = ANY(:schemas)"
+        ),
+        {
+            "schemas": [
+                autogen_context.dialect.default_schema_name  # type: ignore[union-attr]
+                if schema is None
+                else schema
+                for schema in schemas
+            ]
+        },
     )
-    return {view[0]: normalise_postgresql(view[1]) for view in views}
+    return {
+        (
+            None if row[0] == autogen_context.dialect.default_schema_name else row[0],  # type: ignore[union-attr]
+            row[1],
+        ): normalise_postgresql(row[2])
+        for row in rows
+    }
 
 
 def normalise_postgresql(definition: str) -> str:
@@ -48,7 +71,7 @@ REFLECT_DIALECT = {
 def compare_views(
     autogen_context: AutogenContext,
     upgrade_ops: UpgradeOps,
-    schemas: list[str],  # noqa: ARG001
+    schemas: list[str],
 ) -> None:
     sqla_views = {
         k: str(v.compile()).replace("\n", "")
@@ -59,19 +82,26 @@ def compare_views(
         raise NotImplementedError(
             f"Unsupported dialect for view reflection: {autogen_context.dialect.name}"  # type: ignore[union-attr]
         )
-    db_views = REFLECT_DIALECT[autogen_context.dialect.name](autogen_context)  # type: ignore[union-attr]
+    db_views = REFLECT_DIALECT[autogen_context.dialect.name](autogen_context, schemas)  # type: ignore[union-attr]
 
-    for name in set(sqla_views) - set(db_views):
+    for schema, name in set(sqla_views) - set(db_views):
         log.info("Detected added view '%s'", name)
-        upgrade_ops.ops.append(CreateViewOp(name, sqla_views[name]))
+        upgrade_ops.ops.append(CreateViewOp(name, sqla_views[(schema, name)], schema))
 
-    for name in set(db_views) - set(sqla_views):
+    for schema, name in set(db_views) - set(sqla_views):
         log.info("Detected removed view '%s'", name)
-        upgrade_ops.ops.append(DropViewOp(name, old_definition=db_views[name]))
+        upgrade_ops.ops.append(
+            DropViewOp(name, schema, old_definition=db_views[(schema, name)])
+        )
 
-    for name in set(sqla_views) & set(db_views):
-        if sqla_views[name] != db_views[name]:
+    for schema, name in set(sqla_views) & set(db_views):
+        if sqla_views[(schema, name)] != db_views[(schema, name)]:
             log.info("Detected changed view '%s'", name)
             upgrade_ops.ops.append(
-                ReplaceViewOp(name, sqla_views[name], old_definition=db_views[name])
+                ReplaceViewOp(
+                    name,
+                    sqla_views[(schema, name)],
+                    schema,
+                    old_definition=db_views[(schema, name)],
+                )
             )
