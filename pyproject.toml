@@ -57,3 +57,7 @@ ignore = [
     "COM812",  # trailing-comma-on-bare-tuple
     "E501",  # line-too-long
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
