@@ -13,42 +13,6 @@ from alembic_views.operations import CreateViewOp, DropViewOp, ReplaceViewOp
 log = logging.getLogger(__name__)
 
 
-@comparators.dispatch_for("schema")
-def compare_views(
-    autogen_context: AutogenContext,
-    upgrade_ops: UpgradeOps,
-    schemas: list[str],  # noqa: ARG001
-) -> None:
-    sqla_views = {
-        k: str(v.compile()).replace("\n", "")
-        for k, v in autogen_context.metadata.info.get("views", {}).items()  # type: ignore[union-attr]
-    }
-
-    if autogen_context.dialect.name == "sqlite":  # type: ignore[union-attr]
-        db_views = reflect_sqlite(autogen_context)
-    elif autogen_context.dialect.name == "postgresql":  # type: ignore[union-attr]
-        db_views = reflect_postgresql(autogen_context)
-    else:
-        raise NotImplementedError(
-            f"Unsupported dialect for view autogeneration: {autogen_context.dialect.name}"  # type: ignore[union-attr]
-        )
-
-    for name in set(sqla_views) - set(db_views):
-        log.info("Detected added view '%s'", name)
-        upgrade_ops.ops.append(CreateViewOp(name, sqla_views[name]))
-
-    for name in set(db_views) - set(sqla_views):
-        log.info("Detected removed view '%s'", name)
-        upgrade_ops.ops.append(DropViewOp(name, old_definition=db_views[name]))
-
-    for name in set(sqla_views) & set(db_views):
-        if sqla_views[name] != db_views[name]:
-            log.info("Detected changed view '%s'", name)
-            upgrade_ops.ops.append(
-                ReplaceViewOp(name, sqla_views[name], old_definition=db_views[name])
-            )
-
-
 def reflect_sqlite(autogen_context: AutogenContext) -> dict[str, str]:
     views = autogen_context.connection.execute(  # type: ignore[union-attr]
         text("SELECT name, sql FROM sqlite_master WHERE type='view'")
@@ -72,3 +36,42 @@ def normalise_postgresql(definition: str) -> str:
     definition = definition.strip().rstrip(";")
     definition = re.sub("\n *", " ", definition)
     return re.sub("::[a-z]+", "", definition)
+
+
+REFLECT_DIALECT = {
+    "sqlite": reflect_sqlite,
+    "postgresql": reflect_postgresql,
+}
+
+
+@comparators.dispatch_for("schema")
+def compare_views(
+    autogen_context: AutogenContext,
+    upgrade_ops: UpgradeOps,
+    schemas: list[str],  # noqa: ARG001
+) -> None:
+    sqla_views = {
+        k: str(v.compile()).replace("\n", "")
+        for k, v in autogen_context.metadata.info.get("views", {}).items()  # type: ignore[union-attr]
+    }
+
+    if autogen_context.dialect.name not in REFLECT_DIALECT:  # type: ignore[union-attr]
+        raise NotImplementedError(
+            f"Unsupported dialect for view reflection: {autogen_context.dialect.name}"  # type: ignore[union-attr]
+        )
+    db_views = REFLECT_DIALECT[autogen_context.dialect.name](autogen_context)  # type: ignore[union-attr]
+
+    for name in set(sqla_views) - set(db_views):
+        log.info("Detected added view '%s'", name)
+        upgrade_ops.ops.append(CreateViewOp(name, sqla_views[name]))
+
+    for name in set(db_views) - set(sqla_views):
+        log.info("Detected removed view '%s'", name)
+        upgrade_ops.ops.append(DropViewOp(name, old_definition=db_views[name]))
+
+    for name in set(sqla_views) & set(db_views):
+        if sqla_views[name] != db_views[name]:
+            log.info("Detected changed view '%s'", name)
+            upgrade_ops.ops.append(
+                ReplaceViewOp(name, sqla_views[name], old_definition=db_views[name])
+            )
