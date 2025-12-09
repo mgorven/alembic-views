@@ -28,8 +28,8 @@ class CreateViewOp(MigrateOperation):
     def reverse(self) -> "DropViewOp":
         return DropViewOp(self.name, self.schema)
 
-    def to_diff_tuple(self) -> tuple[str, str]:
-        return ("create_view", self.name)
+    def to_diff_tuple(self) -> tuple[str, str | None, str]:
+        return ("create_view", self.schema, self.name)
 
 
 @Operations.implementation_for(CreateViewOp)
@@ -87,8 +87,8 @@ class ReplaceViewOp(MigrateOperation):
             old_definition=self.definition,
         )
 
-    def to_diff_tuple(self) -> tuple[str, str]:
-        return ("replace_view", self.name)
+    def to_diff_tuple(self) -> tuple[str, str | None, str]:
+        return ("replace_view", self.schema, self.name)
 
 
 @Operations.implementation_for(ReplaceViewOp)
@@ -135,8 +135,8 @@ class DropViewOp(MigrateOperation):
         assert self.old_definition
         return CreateViewOp(self.name, self.old_definition, self.schema)
 
-    def to_diff_tuple(self) -> tuple[str, str]:
-        return ("drop_view", self.name)
+    def to_diff_tuple(self) -> tuple[str, str | None, str]:
+        return ("drop_view", self.schema, self.name)
 
 
 @Operations.implementation_for(DropViewOp)
