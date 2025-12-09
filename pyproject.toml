@@ -1,0 +1,59 @@
+[project]
+name = "alembic-views"
+description = "Migration operations for managing views and autogenerate"
+version = "0.0.1"
+requires-python = ">=3.9"
+authors = [
+    { name = "Michael Gorven" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICENSE.txt"]
+
+dependencies = [
+    "alembic>=1.16",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.18",
+    "ruff>=0.6",
+]
+
+[tool.ruff.lint]
+select = [
+    "A",
+    "ARG",
+    "ASYNC",
+    "B",
+    "BLE",
+    "C4",
+    "COM",
+    "DTZ",
+    "E",
+    "EXE",
+    "F",
+    "G",
+    "I",
+    "INP",
+    "ISC",
+    "PL",
+    "PT",
+    "Q",
+    "RET",
+    "RUF",
+    "SLF",
+    "SLOT",
+    "T20",
+    "TID",
+    "TRY",
+    "UP",
+    "W",
+]
+ignore = [
+    "COM812",  # trailing-comma-on-bare-tuple
+    "E501",  # line-too-long
+]
