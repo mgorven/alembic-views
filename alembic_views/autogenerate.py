@@ -85,25 +85,30 @@ def compare_views(
     db_views = REFLECT_DIALECT[autogen_context.dialect.name](autogen_context, schemas)  # type: ignore[union-attr]
 
     for schema, name in set(sqla_views) - set(db_views):
-        log.info("Detected added view '%s'", name)
-        upgrade_ops.ops.append(CreateViewOp(name, sqla_views[(schema, name)], schema))
+        if autogen_context.run_name_filters(name, "view", {"schema_name": schema}):  # type: ignore[arg-type]
+            log.info("Detected added view '%s'", name)
+            upgrade_ops.ops.append(
+                CreateViewOp(name, sqla_views[(schema, name)], schema)
+            )
 
     for schema, name in set(db_views) - set(sqla_views):
-        log.info("Detected removed view '%s'", name)
-        upgrade_ops.ops.append(
-            DropViewOp(name, schema, old_definition=db_views[(schema, name)])
-        )
+        if autogen_context.run_name_filters(name, "view", {"schema_name": schema}):  # type: ignore[arg-type]
+            log.info("Detected removed view '%s'", name)
+            upgrade_ops.ops.append(
+                DropViewOp(name, schema, old_definition=db_views[(schema, name)])
+            )
 
     for schema, name in set(sqla_views) & set(db_views):
-        if sqla_views[(schema, name)] != db_views[(schema, name)]:
-            log.info("Detected changed view '%s'", name)
-            log.debug("SQLAlchemy definition: |%s|", sqla_views[(schema, name)])
-            log.debug("Database definition: |%s|", db_views[(schema, name)])
-            upgrade_ops.ops.append(
-                ReplaceViewOp(
-                    name,
-                    sqla_views[(schema, name)],
-                    schema,
-                    old_definition=db_views[(schema, name)],
+        if autogen_context.run_name_filters(name, "view", {"schema_name": schema}):  # type: ignore[arg-type]
+            if sqla_views[(schema, name)] != db_views[(schema, name)]:
+                log.info("Detected changed view '%s'", name)
+                log.debug("SQLAlchemy definition: |%s|", sqla_views[(schema, name)])
+                log.debug("Database definition: |%s|", db_views[(schema, name)])
+                upgrade_ops.ops.append(
+                    ReplaceViewOp(
+                        name,
+                        sqla_views[(schema, name)],
+                        schema,
+                        old_definition=db_views[(schema, name)],
+                    )
                 )
-            )
