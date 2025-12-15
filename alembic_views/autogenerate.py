@@ -61,9 +61,23 @@ def normalise_postgresql(definition: str) -> str:
     return re.sub("::[a-z]+", "", definition)
 
 
+def compare_postgresql(sqla_view: str, db_view: str) -> bool:
+    # Postgres omits the table name from column clauses if the view selects
+    # from a single table.
+    if "UNION" not in db_view and "JOIN" not in db_view:
+        table = sqla_view.split()[-1]
+        sqla_view = sqla_view.replace(f"{table}.", "")
+
+    return sqla_view == db_view
+
+
 REFLECT_DIALECT = {
     "sqlite": reflect_sqlite,
     "postgresql": reflect_postgresql,
+}
+
+COMPARE_DIALECT = {
+    "postgresql": compare_postgresql,
 }
 
 
@@ -100,7 +114,10 @@ def compare_views(
 
     for schema, name in set(sqla_views) & set(db_views):
         if autogen_context.run_name_filters(name, "view", {"schema_name": schema}):  # type: ignore[arg-type]
-            if sqla_views[(schema, name)] != db_views[(schema, name)]:
+            if not COMPARE_DIALECT.get(
+                autogen_context.dialect.name,  # type: ignore[union-attr]
+                lambda x, y: x == y,
+            )(sqla_views[(schema, name)], db_views[(schema, name)]):
                 log.info("Detected changed view '%s'", name)
                 log.debug("SQLAlchemy definition: |%s|", sqla_views[(schema, name)])
                 log.debug("Database definition: |%s|", db_views[(schema, name)])
